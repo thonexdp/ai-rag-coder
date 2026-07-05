@@ -1,0 +1,21 @@
+services:
+
+  ollama-coder:
+    image: ollama/ollama:latest
+    container_name: school_ollama_coder
+    restart: unless-stopped
+    ports:
+      - "11435:11434"
+    volumes:
+      - ollama_coder_data:/root/.ollama
+
+  ollama-coder-init:
+    image: curlimages/curl:latest
+    container_name: school_ollama_coder_init
+    restart: "no"
+    depends_on:
+      - ollama-coder
+    entrypoint: ["/bin/sh", "-c", "sleep 5 && echo '>>> Pulling qwen2.5-coder:1.5b...' && curl -s -X POST -H 'Content-Type: application/json' -d '{\"name\":\"qwen2.5-coder:1.5b\"}' http://ollama-coder:11434/api/pull && echo '>>> Pulling qwen2.5-coder:7b...' && curl -s -X POST -H 'Content-Type: application/json' -d '{\"name\":\"qwen2.5-coder:7b\"}' http://ollama-coder:11434/api/pull && echo '>>> All coder models ready.'"]
+
+volumes:
+  ollama_coder_data:
