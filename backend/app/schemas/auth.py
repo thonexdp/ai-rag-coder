@@ -53,6 +53,30 @@ class UserRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AdminUserCreate(UserCreate):
+    pass
+
+
+class AdminUserUpdate(BaseModel):
+    email: str
+    full_name: str = Field(min_length=2, max_length=255)
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+    role: UserRole
+
+    @field_validator("email")
+    @classmethod
+    def validate_dev_email(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if not normalized or "@" not in normalized:
+            raise ValueError("Invalid email address format.")
+        local_part, domain = normalized.rsplit("@", 1)
+        if not local_part or not domain:
+            raise ValueError("Invalid email address format.")
+        if "." not in domain and domain != "localhost":
+            raise ValueError("Invalid email address format.")
+        return normalized
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
