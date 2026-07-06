@@ -6,8 +6,17 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user
 from app.database.database import get_db
 from app.database.models import User
-from app.schemas.chat import ChatMessageRead, ChatRequest, ChatResponse, ChatSessionDetail, ChatSessionRead
+from app.schemas.chat import (
+    ChatMessageRead,
+    ChatRequest,
+    ChatResponse,
+    ChatSessionDetail,
+    ChatSessionRead,
+    TranscriptCorrectionRequest,
+    TranscriptCorrectionResponse,
+)
 from app.services.chat_service import ChatService
+from app.services.transcript_correction_service import TranscriptCorrectionService
 
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -20,6 +29,19 @@ def chat(
     current_user: User = Depends(get_current_user),
 ) -> ChatResponse:
     return ChatService(db).handle_chat(payload, current_user)
+
+
+@router.post("/transcript-correct", response_model=TranscriptCorrectionResponse)
+def correct_transcript(
+    payload: TranscriptCorrectionRequest,
+    current_user: User = Depends(get_current_user),
+) -> TranscriptCorrectionResponse:
+    del current_user
+    corrected = TranscriptCorrectionService().correct_transcript(payload.transcript, payload.language)
+    return TranscriptCorrectionResponse(
+        corrected_transcript=corrected,
+        language=payload.language or "en",
+    )
 
 
 @router.get("/history", response_model=list[ChatSessionRead])

@@ -17,6 +17,16 @@ class ChatRequest(BaseModel):
     language: str | None = Field(default=None, max_length=20)
 
 
+class TranscriptCorrectionRequest(BaseModel):
+    transcript: str = Field(min_length=1, max_length=4000)
+    language: str | None = Field(default=None, max_length=20)
+
+
+class TranscriptCorrectionResponse(BaseModel):
+    corrected_transcript: str
+    language: str
+
+
 class ChatResponse(BaseModel):
     answer: str
     language: str
