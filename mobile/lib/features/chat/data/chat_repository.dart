@@ -37,6 +37,22 @@ class ChatRepository {
     );
   }
 
+  Future<String> correctTranscript({
+    required String token,
+    required String transcript,
+    required String language,
+  }) async {
+    final response = await _apiClient.postJson(
+      '/chat/transcript-correct',
+      token: token,
+      body: {
+        'transcript': transcript,
+        'language': language,
+      },
+    );
+    return response['corrected_transcript'] as String? ?? transcript;
+  }
+
   Future<List<ChatSessionItem>> getHistory(String token) async {
     final response = await _apiClient.getJsonList('/chat/history', token: token);
     return response
