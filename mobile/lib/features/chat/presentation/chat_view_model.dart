@@ -24,7 +24,8 @@ class ChatState {
     this.isSending = false,
     this.isListening = false,
     this.error,
-    this.language = 'en',
+    this.language = AppLanguage.english,
+    this.voiceDraft = '',
   });
 
   final List<ChatMessageItem> messages;
@@ -33,7 +34,8 @@ class ChatState {
   final bool isSending;
   final bool isListening;
   final String? error;
-  final String language;
+  final AppLanguage language;
+  final String voiceDraft;
 
   ChatState copyWith({
     List<ChatMessageItem>? messages,
@@ -43,7 +45,8 @@ class ChatState {
     bool? isListening,
     String? error,
     bool clearError = false,
-    String? language,
+    AppLanguage? language,
+    String? voiceDraft,
   }) {
     return ChatState(
       messages: messages ?? this.messages,
@@ -53,6 +56,7 @@ class ChatState {
       isListening: isListening ?? this.isListening,
       error: clearError ? null : error ?? this.error,
       language: language ?? this.language,
+      voiceDraft: voiceDraft ?? this.voiceDraft,
     );
   }
 }
@@ -65,6 +69,8 @@ class ChatViewModel extends StateNotifier<ChatState> {
   final Ref _ref;
   final ChatRepository _repository;
   final VoiceService _voiceService;
+  bool _voiceAutoSubmitInFlight = false;
+  static const _voiceCorrectionPreviewDelay = Duration(milliseconds: 300);
 
   Future<void> loadHistory() async {
     final token = _ref.read(authViewModelProvider).token;
@@ -97,16 +103,19 @@ class ChatViewModel extends StateNotifier<ChatState> {
         token: authState.token!,
         message: text.trim(),
         sessionId: state.sessionId,
-        language: state.language,
+        language: _languageCode(state.language),
       );
       state = state.copyWith(
         messages: [...state.messages, result.$1],
         sessionId: result.$2,
-        language: result.$3,
+        language: _languageFromCode(result.$3),
         isSending: false,
       );
       if (_ref.read(settingsViewModelProvider).enableTextToSpeech) {
-        await _voiceService.speak(result.$1.content, language: result.$3);
+        await _voiceService.speak(
+          result.$1.content,
+          language: _languageFromCode(result.$3),
+        );
       }
       await loadHistory();
     } catch (error) {
@@ -128,15 +137,40 @@ class ChatViewModel extends StateNotifier<ChatState> {
   }
 
   Future<void> startVoiceInput(void Function(String text) onRecognized) async {
-    state = state.copyWith(isListening: true, clearError: true);
-    await _voiceService.startListening((text) {
-      onRecognized(text);
-    });
+    if (state.isSending || state.isListening) {
+      return;
+    }
+    _voiceAutoSubmitInFlight = false;
+    state = state.copyWith(isListening: true, clearError: true, voiceDraft: '');
+    await _voiceService.startListening(
+      onPartialResult: (text) {
+        state = state.copyWith(voiceDraft: text);
+        onRecognized(text);
+      },
+      onFinalResult: (text) async {
+        state = state.copyWith(isListening: false, voiceDraft: text);
+        onRecognized(text);
+        await submitVoiceDraft();
+      },
+      onUnavailable: () {
+        state = state.copyWith(
+          isListening: false,
+          error: 'Voice input is unavailable on this device or browser.',
+        );
+      },
+      onDone: () {
+        if (state.isListening) {
+          state = state.copyWith(isListening: false);
+        }
+      },
+      language: state.language,
+    );
   }
 
   Future<void> stopVoiceInput() async {
     await _voiceService.stopListening();
     state = state.copyWith(isListening: false);
+    await submitVoiceDraft();
   }
 
   void startNewChat() {
@@ -184,8 +218,90 @@ class ChatViewModel extends StateNotifier<ChatState> {
     }
   }
 
-  void setLanguage(String value) {
+  void setLanguage(AppLanguage value) {
     state = state.copyWith(language: value);
+  }
+
+  void clearError() {
+    state = state.copyWith(clearError: true);
+  }
+
+  Future<void> submitVoiceDraft() async {
+    if (_voiceAutoSubmitInFlight || state.isSending) {
+      return;
+    }
+    final originalText = state.voiceDraft.trim();
+    if (originalText.isEmpty) {
+      state = state.copyWith(
+        error: 'No voice input detected. Please try again.',
+        voiceDraft: '',
+      );
+      return;
+    }
+
+    _voiceAutoSubmitInFlight = true;
+    try {
+      final correctedText = await _correctVoiceTranscript(originalText);
+      state = state.copyWith(voiceDraft: correctedText, clearError: true);
+      await Future<void>.delayed(_voiceCorrectionPreviewDelay);
+      state = state.copyWith(voiceDraft: '');
+      await sendMessage(correctedText);
+    } finally {
+      _voiceAutoSubmitInFlight = false;
+    }
+  }
+
+  Future<String> _correctVoiceTranscript(String transcript) async {
+    final token = _ref.read(authViewModelProvider).token;
+    if (token == null) {
+      return transcript;
+    }
+
+    final language = _languageCode(state.language);
+    if (!_shouldCorrectVoiceTranscript(language)) {
+      return transcript;
+    }
+
+    try {
+      final corrected = await _repository.correctTranscript(
+        token: token,
+        transcript: transcript,
+        language: language,
+      );
+      return corrected.trim().isEmpty ? transcript : corrected.trim();
+    } catch (_) {
+      return transcript;
+    }
+  }
+
+  bool _shouldCorrectVoiceTranscript(String language) {
+    return language == 'fil' || language == 'ceb';
+  }
+
+  String _languageCode(AppLanguage language) {
+    switch (language) {
+      case AppLanguage.tagalog:
+        return 'fil';
+      case AppLanguage.bisaya:
+        return 'ceb';
+      case AppLanguage.english:
+        return 'en';
+    }
+  }
+
+  AppLanguage _languageFromCode(String code) {
+    switch (code.toLowerCase()) {
+      case 'fil':
+      case 'tl':
+      case 'tagalog':
+        return AppLanguage.tagalog;
+      case 'ceb':
+      case 'bisaya':
+      case 'cebuano':
+        return AppLanguage.bisaya;
+      default:
+        return AppLanguage.english;
+    }
   }
 }
 

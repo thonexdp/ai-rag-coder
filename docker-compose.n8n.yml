@@ -1,0 +1,25 @@
+# docker-compose.n8n.yml
+services:
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: school_n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: https://human-passion-scheming.ngrok-free.dev  # replaced with ngrok URL later
+      GENERIC_TIMEZONE: Asia/Manila
+      # Allows n8n to call your local Ollama on host machine
+      EXECUTIONS_TIMEOUT: 900 
+      NODE_FUNCTION_ALLOW_EXTERNAL: "*"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # Linux fix — lets n8n reach host ports
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
